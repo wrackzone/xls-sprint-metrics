@@ -1,0 +1,6 @@
+{
+	"url" : "https://rally1.rallydev.com/slm",
+	"username" : "me@mycompany.com",
+	"workspace_name" : "workspace1",
+	"project_name" : ["Team1","Team2","Team3"]
+}
