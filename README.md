@@ -20,6 +20,7 @@ Create a json configuration file using sample.json as a template.
 ruby xls-sprint-metrics.rb config.json password
 
 Replace config.json with your json configuration file
+
 Replace password with your rally password
 
 
