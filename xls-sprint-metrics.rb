@@ -578,6 +578,15 @@ print username,"\t",project_names,"\n"
 project_metrics = {}
 project_iterations = {}
 
+# validate projects
+project_names.each { |project_name| 
+	lookbackdata = LookBackData.new( url, username, password, workspace_name, project_name, "log.txt", projects )
+	if lookbackdata.find_object("Project",project_name) == nil
+		abort( "'#{project_name}' not found!" )
+	end
+}
+
+
 project_names.each { |project_name| 
 
 	# initialize
