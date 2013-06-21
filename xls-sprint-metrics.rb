@@ -9,7 +9,6 @@
 
 require 'rally_api'
 require 'logger'
-
 require 'net/http'
 require 'uri'
 require 'time'
@@ -17,7 +16,6 @@ require 'date'
 require 'csv'
 require 'pp'
 require 'axlsx'
-
 
 metric_labels = ["Committed","Final","Accepted","Carried Over"]
 
@@ -324,6 +322,37 @@ class LookBackData
 		r
 	end
 
+	def metric_day1_committed_count(iteration,dates,snapshots)
+		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,dates.first)}).compact!
+		day1_count = 0
+		if sfd1
+			day1_count = sfd1.length > 0 ? 
+				((sfd1.map { |sn| 1 })).reduce(0,:+) : 0
+		end
+		
+		return day1_count
+	end
+
+	def metric_day2_committed_count(iteration,dates,snapshots)
+		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,dates.last)}).compact!
+		day1_count = 0
+		if sfd1
+			day1_count = sfd1.length > 0 ? 
+				((sfd1.map { |sn| 1 })).reduce(0,:+) : 0
+		end
+		return day1_count
+	end
+	def metric_day2_accepted_count(iteration,dates,snapshots)
+		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,dates.last)}).compact!
+		accepted = 0
+		if sfd1
+			accepted = sfd1.length > 0 ? 
+				((sfd1.map { |sn| sn["ScheduleState"]== "Accepted" ? 1 : 0 })).reduce(0,:+) : 0
+		end
+		return accepted
+	end
+
+
 	def metric_day1_committed_points(iteration,dates,snapshots)
 		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,dates.first)}).compact!
 
@@ -365,7 +394,7 @@ class LookBackData
 		return accepted
 	end
 
-	def metric_carried_over(iteration1,iteration2)
+	def metric_carried_over_count(iteration1,iteration2)
 
 		return 0 if !iteration2
 
@@ -397,13 +426,13 @@ class LookBackData
 			labels.each { |label|
 				case label
 					when 'Committed'
-						metrics[label] = metric_day1_committed_points(iteration,date_array,snapshots)
+						metrics[label] = metric_day1_committed_count(iteration,date_array,snapshots)
 					when 'Final'
-						metrics[label] = metric_day2_committed_points(iteration,date_array,snapshots)
+						metrics[label] = metric_day2_committed_count(iteration,date_array,snapshots)
 					when 'Accepted'
-						metrics[label] = metric_day2_accepted_points(iteration,date_array,snapshots)
+						metrics[label] = metric_day2_accepted_count(iteration,date_array,snapshots)
 					when 'Carried Over'
-						metrics[label] = metric_carried_over( iteration, ( i < iterations.length - 1 ? iterations[i+1] : nil))
+						metrics[label] = metric_carried_over_count( iteration, ( i < iterations.length - 1 ? iterations[i+1] : nil))
 				end
 			}
 			allMetrics[iteration["ObjectID"].to_s] = metrics
@@ -508,20 +537,49 @@ class XLS
     				start_row = (i*20) + ( i > 0 ? 1 : 0)
     				end_row = start_row + 20
 
-    				sheet.add_chart(Axlsx::LineChart, 
-    				:start_at => [0,start_row], :end_at => [10, end_row], :title => "Iteration Metrics : " + project, :show_legend => true ) do |chart|
+    				sheet.add_chart(Axlsx::Bar3DChart, :barDir => :col,
+    				#:start_at => [0,start_row], :end_at => [10, end_row], :title => "Iteration Metrics : " + project, :show_legend => true ) do |chart|
+					 :start_at => [0,start_row], :end_at => [10, end_row], :title => "Iteration Metrics : " + project ) do |chart|
     					label_cells = dataSheet.rows[prow+1].cells[2..iters.length+1]
     					@metrics_labels.each_with_index { |label,x| 
 	    					series_cells = dataSheet.rows[prow+2+x].cells[2..iters.length+2]
 	    					title_cells = dataSheet.rows[prow+2+x].cells[1]
-	      					chart.add_series :data => series_cells, :labels => label_cells,  :title => title_cells
+	      					chart.add_series :data => series_cells,  :title => title_cells, :labels => label_cells #, :title => title_cells #:labels => label_cells,  :title => title_cells
+	      					chart.catAxis.label_rotation = 45
+	      					chart.valAxis.label_rotation = -45
+	      					chart.valAxis.gridlines = false
+    						chart.catAxis.gridlines = false
+    						chart.catAxis.tick_lbl_pos = :none
+    						chart.valAxis.tick_lbl_pos = :none
       					}
-      					#chart.add_series :data => dataSheet["C4:J4"], :title => dataSheet["B4"]
-      					#chart.add_series :data => dataSheet["C5:J5"], :title => dataSheet["B5"]
     				end
-    				#end
 
+					# sheet.add_chart(Axlsx::Bar3DChart, :barDir => :col, 
+    	# 			:start_at => [12,start_row], :end_at => [22, end_row], :title => "Iteration Metrics : " + project, :show_legend => true ) do |chart|
+    	# 				label_cells = []
+    	# 				title_cells = dataSheet.rows[prow+2].cells[1]
+    	# 				scells = []
+    	# 				iters.each_with_index { |it,x|
+    	# 					label_cells.push(dataSheet.rows[prow+2].cells[1])
+    	# 					label_cells.push(dataSheet.rows[prow+3].cells[1])
+    	# 					label_cells.push(dataSheet.rows[prow+4].cells[1])
+    	# 					label_cells.push(dataSheet.rows[prow+5].cells[1])
 
+					# 		scells[0] = dataSheet.rows[prow+2].cells[1+x]
+					# 		scells[1] = dataSheet.rows[prow+3].cells[1+x]
+					# 		scells[2] = dataSheet.rows[prow+4].cells[1+x]
+					# 		scells[3] = dataSheet.rows[prow+5].cells[1+x]
+
+					# 		chart.add_series :data => scells , :title => label_cells
+    	# 				}
+    					# @metrics_labels.each_with_index { |label,x| 
+	    				# 	series_cells = dataSheet.rows[prow+2+x].cells[2..iters.length+2]
+	    				# 	title_cells = dataSheet.rows[prow+2+x].cells[1]
+	      		# 			chart.add_series :data => series_cells, :labels => label_cells,  :title => title_cells
+      			# 		}
+    			#	end
+
+    				
     			}
 
     		end
@@ -565,11 +623,17 @@ if  !config
 	exit
 end
 
+# if the cache directory does not exist create it.
+if not File.directory? "cache"
+	Dir::mkdir("cache")
+end
+
 url            = config["url"]
 username       = config["username"]
 password       = config["password"]
 workspace_name = config["workspace_name"]
 project_names   = config["project_name"]
+number_of_iterations = config["number_of_iterations"]
 
 projects = project_names
 
@@ -595,6 +659,13 @@ project_names.each { |project_name|
 	# finds the release(s) by name (if parent project there may be multiple releases for the name)
 	# releases = lookbackdata.get_releases_by_name release_name
 	iterations = lookbackdata.get_previous_iterations
+
+	# truncate to just the last set of iterations
+	if number_of_iterations != nil
+		while ( iterations.length > number_of_iterations)
+			iterations.shift
+		end
+	end
 
 	#pp iterations
 	metrics = lookbackdata.populate_metrics(project_name,iterations,metric_labels)
