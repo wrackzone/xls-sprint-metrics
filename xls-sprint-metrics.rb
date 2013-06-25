@@ -17,7 +17,7 @@ require 'csv'
 require 'pp'
 require 'axlsx'
 
-metric_labels = ["Committed","Final","Accepted","Carried Over"]
+metric_labels = ["Committed","Final","Accepted","Carried Over","No Estimate (Percentage)","50% Accepted(Percentage)"]
 
 module RallyAPI
 	class RallyObject
@@ -406,6 +406,45 @@ class LookBackData
 
 	end
 
+	# count the number of items that dont have an estimate on day 1 of the iteration
+	def metric_day1_no_estimates(iteration,dates,snapshots)
+		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,dates.first)}).compact!
+
+		day1_no_estimate = 0
+		day1_count = 0
+
+		if sfd1
+			day1_no_estimate = sfd1.length > 0 ? 
+				((sfd1.map { |sn| !sn["PlanEstimate"] || sn["PlanEstimate"] == 0 ? 1 : 0})).reduce(0,:+) : 0
+			day1_count = sfd1.length > 0 ? 
+				((sfd1.map { |sn| 1 })).reduce(0,:+) : 0
+
+		end
+		
+		return day1_no_estimate > 0 ? ((day1_no_estimate/day1_count)*100) : 0
+	end
+
+	def metric_50_percent_accepted(iteration,date_array,snapshots)
+
+		date_array.each_with_index { |day,i| 
+			# filter to just the snapshots for that day
+			sfd = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,day)}).compact!
+			if sfd
+				accepted = sfd.length > 0 ? 
+				((sfd.map { |sn| sn["ScheduleState"]== "Accepted" ? 1 : 0})).reduce(0,:+) : 0
+				count = (sfd.map { |snapshot| snapshot["ObjectID"] }).uniq.length
+				#print "Count:#{count} Accepted:#{accepted} %#{((accepted.to_f/count.to_f)*100)}\n"
+				if count > 0 and (( accepted.to_f / count.to_f ) * 100) >= 50
+					pInIteration = (( i.to_f / date_array.length.to_f) * 100)
+					return (pInIteration.to_i)
+				end
+			end
+		}
+		return 0
+
+	end
+
+
 
 	def populate_metrics(project,iterations,labels)
 
@@ -433,6 +472,12 @@ class LookBackData
 						metrics[label] = metric_day2_accepted_count(iteration,date_array,snapshots)
 					when 'Carried Over'
 						metrics[label] = metric_carried_over_count( iteration, ( i < iterations.length - 1 ? iterations[i+1] : nil))
+					when 'No Estimate (Percentage)'
+						metrics[label] = metric_day1_no_estimates(iteration,date_array,snapshots)
+					when '50% Accepted(Percentage)'
+						metrics[label] = metric_50_percent_accepted(iteration,date_array,snapshots)
+						
+
 				end
 			}
 			allMetrics[iteration["ObjectID"].to_s] = metrics
@@ -510,7 +555,6 @@ class XLS
 		      		project_rows[project] = sheet.rows.length - 2
 
 		      		# write each metrics row
-
 		      		@metrics_labels.each { |label|
 		      			itmetrics = []
 		      			#pp @iterations
@@ -541,7 +585,8 @@ class XLS
     				#:start_at => [0,start_row], :end_at => [10, end_row], :title => "Iteration Metrics : " + project, :show_legend => true ) do |chart|
 					 :start_at => [0,start_row], :end_at => [10, end_row], :title => "Iteration Metrics : " + project ) do |chart|
     					label_cells = dataSheet.rows[prow+1].cells[2..iters.length+1]
-    					@metrics_labels.each_with_index { |label,x| 
+    					# only graph the first 4
+    					@metrics_labels[0..3].each_with_index { |label,x| 
 	    					series_cells = dataSheet.rows[prow+2+x].cells[2..iters.length+2]
 	    					title_cells = dataSheet.rows[prow+2+x].cells[1]
 	      					chart.add_series :data => series_cells,  :title => title_cells, :labels => label_cells #, :title => title_cells #:labels => label_cells,  :title => title_cells
@@ -553,33 +598,6 @@ class XLS
     						chart.valAxis.tick_lbl_pos = :none
       					}
     				end
-
-					# sheet.add_chart(Axlsx::Bar3DChart, :barDir => :col, 
-    	# 			:start_at => [12,start_row], :end_at => [22, end_row], :title => "Iteration Metrics : " + project, :show_legend => true ) do |chart|
-    	# 				label_cells = []
-    	# 				title_cells = dataSheet.rows[prow+2].cells[1]
-    	# 				scells = []
-    	# 				iters.each_with_index { |it,x|
-    	# 					label_cells.push(dataSheet.rows[prow+2].cells[1])
-    	# 					label_cells.push(dataSheet.rows[prow+3].cells[1])
-    	# 					label_cells.push(dataSheet.rows[prow+4].cells[1])
-    	# 					label_cells.push(dataSheet.rows[prow+5].cells[1])
-
-					# 		scells[0] = dataSheet.rows[prow+2].cells[1+x]
-					# 		scells[1] = dataSheet.rows[prow+3].cells[1+x]
-					# 		scells[2] = dataSheet.rows[prow+4].cells[1+x]
-					# 		scells[3] = dataSheet.rows[prow+5].cells[1+x]
-
-					# 		chart.add_series :data => scells , :title => label_cells
-    	# 				}
-    					# @metrics_labels.each_with_index { |label,x| 
-	    				# 	series_cells = dataSheet.rows[prow+2+x].cells[2..iters.length+2]
-	    				# 	title_cells = dataSheet.rows[prow+2+x].cells[1]
-	      		# 			chart.add_series :data => series_cells, :labels => label_cells,  :title => title_cells
-      			# 		}
-    			#	end
-
-    				
     			}
 
     		end
