@@ -499,9 +499,9 @@ class XLS
 
 	def iteration_end_date(iteration) 
 
-		print iteration,"\n"
 		d1 = Date.parse(iteration["EndDate"])
-		d1.to_s
+		d1.strftime("(%-m/%d)")
+		#d1.to_s
 
 	end
 
