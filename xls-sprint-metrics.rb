@@ -17,7 +17,7 @@ require 'csv'
 require 'pp'
 require 'axlsx'
 
-metric_labels = ["Committed","Final","Accepted","Carried Over","No Estimate (Percentage)","50% Accepted(Percentage)"]
+metric_labels = ["Committed (Count)","Final (Count)","Accepted (Count)","Carried Over (Count)","Committed (Points)","Final (Points)","Accepted (Points)","Carried Over (Points)","No Estimate (Percentage)","50% Accepted(Percentage)","Points Accepted (Percentage)","Points Not Completed (Percentage)","Daily In-Progress (Percentage)"]
 
 module RallyAPI
 	class RallyObject
@@ -394,15 +394,17 @@ class LookBackData
 		return accepted
 	end
 
-	def metric_carried_over_count(iteration1,iteration2)
+	def metric_carried_over(iteration1,iteration2,type)
 
 		return 0 if !iteration2
 
 		snapshots = (JSON.parse( query_snapshots_for_carried_over(iteration1,iteration2)))["Results"]
 
-		snapshots = snapshots.map { |snapshot| snapshot["ObjectID"] } .uniq
+		# snapshots = snapshots.map { |snapshot| snapshot["ObjectID"] } .uniq
 
-		return snapshots.length
+		return ( type == "count" ? 
+			snapshots.length : 
+			snapshots.length > 0 ? (snapshots.map { |sn| sn["PlanEstimate"] ? sn["PlanEstimate"].to_f : 0 }).reduce(0,:+) : 0)
 
 	end
 
@@ -444,6 +446,58 @@ class LookBackData
 
 	end
 
+	def metric_points_accepted_percentage(metrics)
+		
+		final_points = metrics['Final (Points)']
+		accepted_points = metrics['Accepted (Points)']
+
+		pAccepted = final_points > 0 ? (accepted_points.to_f / final_points.to_f) * 100 : 0
+		return pAccepted.to_i
+
+	end
+
+	
+	# returns the % of points not completed (or accepted)
+	def metric_points_not_completed_percentage(iteration,date_array,snapshots)
+
+		sfd = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,date_array.last)}).compact!
+
+		total_points = 0
+		not_completed_points = 0
+
+		if sfd
+			total_points = sfd.length > 0 ? 
+				((sfd.map { |sn| !sn["PlanEstimate"] || sn["PlanEstimate"] == 0 ? 0 : sn["PlanEstimate"] })).reduce(0,:+) : 0
+			not_completed_points = sfd.length > 0 ? 
+				((sfd.map { |sn| !sn["PlanEstimate"] || sn["PlanEstimate"] == 0 || sn["ScheduleState"] == "Accepted" || sn["ScheduleState"] == "Completed" ? 0 : sn["PlanEstimate"] })).reduce(0,:+) : 0
+
+		end
+		
+		return total_points > 0 ? ((not_completed_points.to_f/total_points.to_f)*100).to_i : 0
+
+	end
+
+	# returns an average of how much work in progress daily
+	def metric_points_in_progress_percentage(iteration,date_array,snapshots)
+
+		daily_pcs = []
+		date_array.each_with_index { |day,i| 
+			# filter to just the snapshots for that day
+			sfd = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,day)}).compact!
+			if sfd
+				inp = sfd.length > 0 ? 
+				((sfd.map { |sn| sn["ScheduleState"]== "In-Progress" ? 1 : 0})).reduce(0,:+) : 0
+				count = (sfd.map { |snapshot| snapshot["ObjectID"] }).uniq.length
+				#print "Count:#{count} Accepted:#{accepted} %#{((accepted.to_f/count.to_f)*100)}\n"
+				daily_pcs.push( count > 0 ? ((inp.to_f / count.to_f) * 100).to_i : 0 )
+			end
+		}
+
+		avg = (daily_pcs.inject{ |sum, el| sum + el }.to_f / daily_pcs.size)
+		return avg > 0 ? avg.to_i : 0
+
+
+	end
 
 
 	def populate_metrics(project,iterations,labels)
@@ -462,22 +516,38 @@ class LookBackData
 
 			metrics = {}
 
+			# metric_labels = ["Committed (Count)","Final (Count)","Accepted (Count)",
+			# "Carried Over (Count)","Committed (Points)","Final (Points)","Accepted (Points)","Carried Over (Points)",
+			# "No Estimate (Percentage)","50% Accepted(Percentage)"]
+
 			labels.each { |label|
 				case label
-					when 'Committed'
+					when 'Committed (Count)'
 						metrics[label] = metric_day1_committed_count(iteration,date_array,snapshots)
-					when 'Final'
+					when 'Final (Count)'
 						metrics[label] = metric_day2_committed_count(iteration,date_array,snapshots)
-					when 'Accepted'
+					when 'Accepted (Count)'
 						metrics[label] = metric_day2_accepted_count(iteration,date_array,snapshots)
-					when 'Carried Over'
-						metrics[label] = metric_carried_over_count( iteration, ( i < iterations.length - 1 ? iterations[i+1] : nil))
+					when 'Carried Over (Count)'
+						metrics[label] = metric_carried_over( iteration, ( i < iterations.length - 1 ? iterations[i+1] : nil),"count")
+					when 'Committed (Points)'
+						metrics[label] = metric_day1_committed_points(iteration,date_array,snapshots)
+					when 'Final (Points)'
+						metrics[label] = metric_day2_committed_points(iteration,date_array,snapshots)
+					when 'Accepted (Points)'
+						metrics[label] = metric_day2_accepted_points(iteration,date_array,snapshots)
+					when 'Carried Over (Points)'
+						metrics[label] = metric_carried_over( iteration, ( i < iterations.length - 1 ? iterations[i+1] : nil),"points")
 					when 'No Estimate (Percentage)'
 						metrics[label] = metric_day1_no_estimates(iteration,date_array,snapshots)
 					when '50% Accepted(Percentage)'
 						metrics[label] = metric_50_percent_accepted(iteration,date_array,snapshots)
-						
-
+					when 'Points Accepted (Percentage)'
+						metrics[label] = metric_points_accepted_percentage(metrics)
+					when 'Points Not Completed (Percentage)'
+						metrics[label] = metric_points_not_completed_percentage(iteration,date_array,snapshots)
+					when 'Daily In-Progress (Percentage)'
+						metrics[label] = metric_points_in_progress_percentage(iteration,date_array,snapshots)
 				end
 			}
 			allMetrics[iteration["ObjectID"].to_s] = metrics
@@ -569,7 +639,8 @@ class XLS
 		      			itmetrics = []
 		      			#pp @iterations
 		      			@iterations[project].each { |it|
-	      					itmetrics.push( @metrics[project][it["ObjectID"].to_s][label] )
+		      				m = @metrics[project][it["ObjectID"].to_s][label]
+	      					itmetrics.push( m != 0 ? m : "" )
 		      			}
 		      			itmetrics.unshift(label)
 		      			itmetrics.unshift(nil)
