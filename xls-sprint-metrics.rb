@@ -586,6 +586,9 @@ class XLS
 			p.use_autowidth = false
 			cell_rotated_text_style = p.workbook.styles.add_style(:alignment => {:textRotation => 180, :horizontal => :center})
 			centered_style = p.workbook.styles.add_style(:alignment => { :horizontal => :center } )
+			bg_style = p.workbook.styles.add_style(:bg_color => "FFC0C0C0",
+                           :fg_color=>"#FF000000",
+                           :border=>Axlsx::STYLE_THIN_BORDER)
 
   			p.workbook.add_worksheet(:name => "#{filename}") do |sheet|
 
@@ -600,10 +603,7 @@ class XLS
 
 	    			sheet.add_row row0
 
-	    			#ilabels = @iterations[project].pluck("Name")
 	    			ilabels = @iterations[project].map { |it| it["Name"] + " " + iteration_end_date(it) }
-	    			#iDates = @iterations[project].map { |i| iteration_end_date(i) }
-	    			#ilabels.map! { |label| "#{label}"}
 	    			istyles  = @iterations[project].map { cell_rotated_text_style }
 
 	    			ilabels.unshift(nil)
@@ -619,32 +619,27 @@ class XLS
 		      		cells1 = sheet.rows[sheet.rows.length-2].cells[0..1]
 
 		      		cells = sheet.rows[sheet.rows.length-2].cells[2..@iterations[project].length+1]
-		      		#pp sheet.rows[0].cells.length
-		      		#mc = "B1:#{colIndex}1"
-		      		#sheet.merge_cells(mc)
 		      		sheet.merge_cells(cells)
 		      		sheet.merge_cells(cells1)
-		      		#sheet["B1"].style = centered_style
 		      		sheet.rows[sheet.rows.length-2].cells[1].style = centered_style
-		      		#sheet.merge_cells("A2:B2")
 		      		sheet.merge_cells( sheet.rows[sheet.rows.length-1].cells[0..1])
-		      		#sheet["A2"].style = centered_style
 		      		sheet.rows[sheet.rows.length-1].cells[1].style = centered_style
 
 		      		# save the row
 		      		project_rows[project] = sheet.rows.length - 2
 
 		      		# write each metrics row
-		      		@metrics_labels.each { |label|
+		      		@metrics_labels.each_with_index { |label,i|
 		      			itmetrics = []
 		      			#pp @iterations
 		      			@iterations[project].each { |it|
 		      				m = @metrics[project][it["ObjectID"].to_s][label]
 	      					itmetrics.push( m != 0 ? m : "" )
 		      			}
+		      			row_style = ((i>=0&&i<=3) || (i>=8&&i<=12)) ? bg_style : nil
 		      			itmetrics.unshift(label)
 		      			itmetrics.unshift(nil)
-		      			sheet.add_row itmetrics
+		      			sheet.add_row itmetrics, :style => itmetrics.map { |m| row_style }
 		      		}
 
 		      		sheet.add_row []
