@@ -99,7 +99,7 @@ class LookBackData
 		iteration_query.fetch = "ObjectID,StartDate,EndDate,Name,PlannedVelocity,Project"
 		iteration_query.project_scope_up = false
 		iteration_query.project_scope_down = true
-		iteration_query.order = "ObjectID"
+		iteration_query.order = "EndDate"
 		iteration_query.query_string = ""
 		iteration_query
 	end
@@ -497,6 +497,14 @@ class XLS
 
 	end
 
+	def iteration_end_date(iteration) 
+
+		print iteration,"\n"
+		d1 = Date.parse(iteration["EndDate"])
+		d1.to_s
+
+	end
+
 	def write_to_file filename
 
 		dataSheet = nil
@@ -522,8 +530,10 @@ class XLS
 
 	    			sheet.add_row row0
 
-	    			ilabels = @iterations[project].pluck("Name")
-	    			ilabels.map! { |label| "#{label}"}
+	    			#ilabels = @iterations[project].pluck("Name")
+	    			ilabels = @iterations[project].map { |it| it["Name"] + " " + iteration_end_date(it) }
+	    			#iDates = @iterations[project].map { |i| iteration_end_date(i) }
+	    			#ilabels.map! { |label| "#{label}"}
 	    			istyles  = @iterations[project].map { cell_rotated_text_style }
 
 	    			ilabels.unshift(nil)
