@@ -485,11 +485,17 @@ class LookBackData
 			# filter to just the snapshots for that day
 			sfd = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,day)}).compact!
 			if sfd
+				#inp = sfd.length > 0 ? 
+				#((sfd.map { |sn| sn["ScheduleState"]== "In-Progress" ? 1 : 0})).reduce(0,:+) : 0
+				# should be based on points.
 				inp = sfd.length > 0 ? 
-				((sfd.map { |sn| sn["ScheduleState"]== "In-Progress" ? 1 : 0})).reduce(0,:+) : 0
-				count = (sfd.map { |snapshot| snapshot["ObjectID"] }).uniq.length
+				((sfd.map { |sn| sn["ScheduleState"]== "In-Progress" ? ( !sn["PlanEstimate"] || sn["PlanEstimate"] == 0 ? 0 : sn["PlanEstimate"]) : 0})).reduce(0,:+) : 0
+				total = sfd.length > 0 ? 
+				((sfd.map { ( !sn["PlanEstimate"] || sn["PlanEstimate"] == 0 ? 0 : sn["PlanEstimate"]) })).reduce(0,:+) : 0
+
+				#count = (sfd.map { |snapshot| snapshot["ObjectID"] }).uniq.length
 				#print "Count:#{count} Accepted:#{accepted} %#{((accepted.to_f/count.to_f)*100)}\n"
-				daily_pcs.push( count > 0 ? ((inp.to_f / count.to_f) * 100).to_i : 0 )
+				daily_pcs.push( total > 0 ? ((inp.to_f / total.to_f) * 100).to_i : 0 )
 			end
 		}
 
