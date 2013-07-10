@@ -106,8 +106,14 @@ class LookBackData
 
 	def get_date_array start_date, end_date
 		d1 = Date.parse(start_date)
+		pp start_date
+		pp d1
 		d2 = Date.parse(end_date)
+		pp end_date
+		pp d2
 		dates = (d1..d2).to_a
+		# knockout weekend days.
+		dates.delete_if { |d| d.strftime("%A") == "Sunday" || d.strftime("%A") == "Saturday" }
 		return dates
 	end
 
@@ -128,7 +134,8 @@ class LookBackData
 
 	def get_previous_iterations 
 		query = create_iterations_query()
-		query.query_string = "((EndDate < \"#{Time.now.utc.iso8601}\") and (Project = \"#{@project["_ref"]}\"))"
+		#query.query_string = "((EndDate < \"#{Time.now.utc.iso8601}\") and (Project = \"#{@project["_ref"]}\"))"
+		query.query_string = "((StartDate < \"#{Time.now.utc.iso8601}\") and (Project = \"#{@project["_ref"]}\"))"
 		#print query.query_string,"\n"
 		results = @rally.find(query)
 		results.results.each { |result| 
@@ -491,7 +498,7 @@ class LookBackData
 				inp = sfd.length > 0 ? 
 				((sfd.map { |sn| sn["ScheduleState"]== "In-Progress" ? ( !sn["PlanEstimate"] || sn["PlanEstimate"] == 0 ? 0 : sn["PlanEstimate"]) : 0})).reduce(0,:+) : 0
 				total = sfd.length > 0 ? 
-				((sfd.map { ( !sn["PlanEstimate"] || sn["PlanEstimate"] == 0 ? 0 : sn["PlanEstimate"]) })).reduce(0,:+) : 0
+				((sfd.map { |sn| ( !sn["PlanEstimate"] || sn["PlanEstimate"] == 0 ? 0 : sn["PlanEstimate"]) })).reduce(0,:+) : 0
 
 				#count = (sfd.map { |snapshot| snapshot["ObjectID"] }).uniq.length
 				#print "Count:#{count} Accepted:#{accepted} %#{((accepted.to_f/count.to_f)*100)}\n"
