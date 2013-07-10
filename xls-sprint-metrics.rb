@@ -106,11 +106,7 @@ class LookBackData
 
 	def get_date_array start_date, end_date
 		d1 = Date.parse(start_date)
-		pp start_date
-		pp d1
 		d2 = Date.parse(end_date)
-		pp end_date
-		pp d2
 		dates = (d1..d2).to_a
 		# knockout weekend days.
 		dates.delete_if { |d| d.strftime("%A") == "Sunday" || d.strftime("%A") == "Saturday" }
