@@ -16,6 +16,7 @@ require 'date'
 require 'csv'
 require 'pp'
 require 'axlsx'
+require 'tzinfo'
 
 metric_labels = ["Committed (Count)","Final (Count)","Accepted (Count)","Carried Over (Count)","Committed (Points)","Final (Points)","Accepted (Points)","Carried Over (Points)","No Estimate (Percentage)","50% Accepted(Percentage)","Points Accepted (Percentage)","Points Not Completed (Percentage)","Daily In-Progress (Percentage)"]
 
@@ -78,6 +79,10 @@ class LookBackData
 		@project.ObjectID
 	end
 
+	def get_project_parent_name
+		@project.Parent ? @project.Parent.Name : ""
+	end
+
 	def create_releases_query
 		iteration_query = RallyAPI::RallyQuery.new()
 		iteration_query.type = :release
@@ -105,9 +110,16 @@ class LookBackData
 	end
 
 	def get_date_array start_date, end_date
-		d1 = Date.parse(start_date)
-		d2 = Date.parse(end_date)
-		dates = (d1..d2).to_a
+		#pp end_date
+		# d1 = Date.parse(start_date)
+		# d2 = Date.parse(end_date)
+		#pp d2
+		tz = TZInfo::Timezone.get('America/New_York')
+		d1 = tz.utc_to_local(Time.parse(start_date)) 
+		d2 = tz.utc_to_local(Time.parse(end_date)) 
+		#pp tz.utc_to_local(Time.parse(end_date))
+
+		dates = (Date.new(d1.year,d1.month,d1.day) .. Date.new(d2.year,d2.month,d2.day)).to_a
 		# knockout weekend days.
 		dates.delete_if { |d| d.strftime("%A") == "Sunday" || d.strftime("%A") == "Saturday" }
 		return dates
@@ -134,9 +146,6 @@ class LookBackData
 		query.query_string = "((StartDate < \"#{Time.now.utc.iso8601}\") and (Project = \"#{@project["_ref"]}\"))"
 		#print query.query_string,"\n"
 		results = @rally.find(query)
-		results.results.each { |result| 
-			
-		}
 		rally_results_to_array(results)
 	end
 
@@ -171,7 +180,7 @@ class LookBackData
 	def find_object(type,name)
 		object_query = RallyAPI::RallyQuery.new()
 		object_query.type = type
-		object_query.fetch = "Name,ObjectID,FormattedID"
+		object_query.fetch = "Name,ObjectID,FormattedID,Parent"
 		object_query.project_scope_up = false
 		object_query.project_scope_down = true
 		object_query.order = "Name Asc"
@@ -337,6 +346,7 @@ class LookBackData
 	end
 
 	def metric_day2_committed_count(iteration,dates,snapshots)
+		#pp dates.last
 		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,dates.last)}).compact!
 		day1_count = 0
 		if sfd1
@@ -573,16 +583,22 @@ class XLS
 		@iterations = project_iterations
 		@metrics = project_metrics
 		@metrics_labels = labels
+		@tz = TZInfo::Timezone.get('America/New_York')
 
 	end
 
 	def iteration_end_date(iteration) 
-
-		d1 = Date.parse(iteration["EndDate"])
-		d1.strftime("(%-m/%d)")
-		#d1.to_s
-
+		t1 = @tz.utc_to_local(Time.parse(iteration["EndDate"])) 
+		d1 = Date.new(t1.year,t1.mon,t1.day)
+		d1.strftime("%-m/%d")
 	end
+
+	def iteration_start_date(iteration) 
+		t1 = @tz.utc_to_local(Time.parse(iteration["StartDate"])) 
+		d1 = Date.new(t1.year,t1.mon,t1.day)
+		d1.strftime("%-m/%d")
+	end
+
 
 	def write_to_file filename
 
@@ -603,16 +619,20 @@ class XLS
 
   				dataSheet = sheet
 
+				sheet.add_row ["Run on " + (Time.new).strftime("%-m/%-d at %I:%M") ]
+
   				@projects.each { |project| 
 
 	  				row0 = [project,"","Sprints"]
 	  				@iterations[project].each { |e|
 	  					row0.push("")
 	  				}
+	  				row0styles = row0.map { |cell| centered_style }
 
-	    			sheet.add_row row0
+	    			sheet.add_row row0, :style => row0styles
 
-	    			ilabels = @iterations[project].map { |it| it["Name"] + " " + iteration_end_date(it) }
+	    			#ilabels = @iterations[project].map { |it| it["Name"] + " " + iteration_end_date(it) }
+	    			ilabels = @iterations[project].map { |it| it["Name"] }
 	    			istyles  = @iterations[project].map { cell_rotated_text_style }
 
 	    			ilabels.unshift(nil)
@@ -624,7 +644,6 @@ class XLS
 	    			sheet.add_row ilabels, :style => istyles
 
 		      		colIndex = (("A".."Z").to_a[@iterations[project].length+1])
-
 		      		cells1 = sheet.rows[sheet.rows.length-2].cells[0..1]
 
 		      		cells = sheet.rows[sheet.rows.length-2].cells[2..@iterations[project].length+1]
@@ -633,6 +652,22 @@ class XLS
 		      		sheet.rows[sheet.rows.length-2].cells[1].style = centered_style
 		      		sheet.merge_cells( sheet.rows[sheet.rows.length-1].cells[0..1])
 		      		sheet.rows[sheet.rows.length-1].cells[1].style = centered_style
+
+
+		      		iCenteredstyles  = @iterations[project].map { centered_style }
+		      		iCenteredstyles.unshift(nil)
+		      		iCenteredstyles.unshift(nil)
+
+	    			iStartDates = @iterations[project].map { |it| iteration_start_date(it) }
+	    			iStartDates.unshift("Start")
+	    			iStartDates.unshift(nil)
+
+	    			sheet.add_row iStartDates, :style => iCenteredstyles
+
+	    			iEndDates = @iterations[project].map { |it| iteration_end_date(it) }
+	    			iEndDates.unshift("End")
+	    			iEndDates.unshift(nil)
+	    			sheet.add_row iEndDates, :style => iCenteredstyles
 
 		      		# save the row
 		      		project_rows[project] = sheet.rows.length - 2
@@ -770,7 +805,6 @@ project_names.each { |project_name|
 		end
 	end
 
-	#pp iterations
 	metrics = lookbackdata.populate_metrics(project_name,iterations,metric_labels)
 
 	project_metrics[project_name] = metrics
