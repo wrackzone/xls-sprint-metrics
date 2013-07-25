@@ -111,15 +111,11 @@ class LookBackData
 
 	def get_date_array start_date, end_date
 		#pp end_date
-		# d1 = Date.parse(start_date)
-		# d2 = Date.parse(end_date)
-		#pp d2
-		tz = TZInfo::Timezone.get('America/New_York')
-		d1 = tz.utc_to_local(Time.parse(start_date)) 
-		d2 = tz.utc_to_local(Time.parse(end_date)) 
-		#pp tz.utc_to_local(Time.parse(end_date))
+		d1 = Date.parse(start_date)
+		d2 = Date.parse(end_date) + 2
 
-		dates = (Date.new(d1.year,d1.month,d1.day) .. Date.new(d2.year,d2.month,d2.day)).to_a
+		dates = (d1 .. d2).to_a
+
 		# knockout weekend days.
 		dates.delete_if { |d| d.strftime("%A") == "Sunday" || d.strftime("%A") == "Saturday" }
 		return dates
@@ -167,8 +163,13 @@ class LookBackData
 	# returns true if the specified day occurs within the snapshot valid from and to dates.
 	def day_in_snapshot snapshot,day
 
+		#tz.utc_to_local(Time.parse(start_date)) 
+		#vf = @tz.utc_to_local(Time.parse(snapshot["_ValidFrom"]))
+		#dvf = Date.parse(vf.to_s)
+
 		if snapshot["_ValidTo"][0..3] == "9999"
 			if day >= Date.parse(snapshot["_ValidFrom"])
+			#if day >= dvf
 				return true
 			end
 		end
@@ -395,7 +396,10 @@ class LookBackData
 
 	def metric_day2_accepted_points(iteration,dates,snapshots)
 
-		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,dates.last)}).compact!
+		d = Date.parse(iteration.EndDate) + 2
+
+		#sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,dates.last)}).compact!
+		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,d)}).compact!
 
 		accepted = 0
 
@@ -423,7 +427,9 @@ class LookBackData
 
 	# count the number of items that dont have an estimate on day 1 of the iteration
 	def metric_day1_no_estimates(iteration,dates,snapshots)
-		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,dates.first)}).compact!
+		#sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,dates.first)}).compact!
+		d = Date.parse(iteration.StartDate) + 1
+		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,d)}).compact!
 
 		day1_no_estimate = 0
 		day1_count = 0
@@ -436,7 +442,8 @@ class LookBackData
 
 		end
 		
-		return day1_no_estimate > 0 ? ((day1_no_estimate/day1_count)*100) : 0
+		#return day1_no_estimate > 0 ? ((day1_no_estimate/day1_count)*100) : 0
+		return day1_no_estimate > 0 ? ((day1_no_estimate.to_f/day1_count.to_f)*100).to_i : 0
 	end
 
 	def metric_50_percent_accepted(iteration,date_array,snapshots)
@@ -529,7 +536,7 @@ class LookBackData
 
 			snapshots = (JSON.parse(query_snapshots_for_iterations([iteration]))) ["Results"]
 
-			#print "iteration snapshots:#{snapshots.length}\n"
+			print "iteration snapshots:#{snapshots.length}\n"
 
 			date_array = get_date_array( iteration.StartDate, iteration.EndDate )
 
