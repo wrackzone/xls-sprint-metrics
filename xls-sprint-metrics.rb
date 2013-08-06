@@ -18,7 +18,7 @@ require 'pp'
 require 'axlsx'
 require 'tzinfo'
 
-metric_labels = ["Committed (Count)","Final (Count)","Accepted (Count)","Carried Over (Count)","Committed (Points)","Final (Points)","Accepted (Points)","Carried Over (Points)","No Estimate (Percentage)","50% Accepted(Percentage)","Points Accepted (Percentage)","Points Not Completed (Percentage)","Daily In-Progress (Percentage)"]
+metric_labels = ["Committed (Count)","Final (Count)","Accepted (Count)","Carried Over (Count)","Committed (Points)","Final (Points)","Accepted (Points)","Carried Over (Points)","No Estimate (Percentage)","50% Accepted(Percentage)","Points Accepted (Percentage)","Points Not Completed (Percentage)","Daily In-Progress (Percentage)","Task Estimate First Day (Hours)","Task Estimate Last Day (Hours)","Task Actual Last Day (Hours)"]
 
 module RallyAPI
 	class RallyObject
@@ -112,7 +112,7 @@ class LookBackData
 	def get_date_array start_date, end_date
 		#pp end_date
 		d1 = Date.parse(start_date)
-		d2 = Date.parse(end_date) + 2
+		d2 = Date.parse(end_date) 
 
 		dates = (d1 .. d2).to_a
 
@@ -315,7 +315,7 @@ class LookBackData
 
 		body = { 
 			"find" => {"Iteration" => { "$in" => iterations.map {|it| it["ObjectID"]}} , "_TypeHierarchy" => { "$in" => ["Defect","HierarchicalRequirement"]}},
-			"fields" => ["ObjectID","FormattedID","Name","Iteration","Release","Project","ScheduleState","Severity","Priority","Tags","PlanEstimate","_ValidFrom","_ValidTo"],
+			"fields" => ["_UnformattedID", "ObjectID","FormattedID","Name","Iteration","Release","Project","ScheduleState","Severity","Priority","Tags","PlanEstimate","_ValidFrom","_ValidTo","TaskEstimateTotal","TaskActualTotal"],
 			"hydrate" => ["ScheduleState","Priority","Severity","Tags"],
 			"pagesize" => 10000
 		}
@@ -334,6 +334,49 @@ class LookBackData
 		end
 		r
 	end
+
+	def metric_day1_task_estimate_total(iteration,dates,snapshots)
+		d = Date.parse(iteration.StartDate) + 1
+		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,d)}).compact!
+
+		day1_total = 0
+
+		if sfd1
+			day1_total = sfd1.length > 0 ? 
+				((sfd1.map { |sn| sn["TaskEstimateTotal"] ? sn["TaskEstimateTotal"] : 0})).reduce(0,:+) : 0
+		end
+		
+		return day1_total
+	end
+
+	def metric_day2_task_estimate_total(iteration,dates,snapshots)
+		d = Date.parse(iteration.EndDate) + 1
+		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,d)}).compact!
+		#print "snapshots:#{sfd1.length}\n"
+		day2_total = 0
+
+		if sfd1
+			day2_total = sfd1.length > 0 ? 
+				((sfd1.map { |sn| sn["TaskEstimateTotal"] ? sn["TaskEstimateTotal"] : 0})).reduce(0,:+) : 0
+		end
+		
+		return day2_total
+	end
+
+	def metric_day2_task_actual_total(iteration,dates,snapshots)
+		d = Date.parse(iteration.EndDate) + 1
+		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,d)}).compact!
+		#print "snapshots:#{sfd1.length}\n"
+		day2_total = 0
+
+		if sfd1
+			day2_total = sfd1.length > 0 ? 
+				((sfd1.map { |sn| sn["TaskActualTotal"] ? sn["TaskActualTotal"] : 0})).reduce(0,:+) : 0
+		end
+		
+		return day2_total
+	end
+
 
 	def metric_day1_committed_count(iteration,dates,snapshots)
 		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,dates.first)}).compact!
@@ -396,7 +439,7 @@ class LookBackData
 
 	def metric_day2_accepted_points(iteration,dates,snapshots)
 
-		d = Date.parse(iteration.EndDate) + 2
+		d = Date.parse(iteration.EndDate)
 
 		#sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,dates.last)}).compact!
 		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,d)}).compact!
@@ -405,7 +448,11 @@ class LookBackData
 
 		if sfd1
 			accepted = sfd1.length > 0 ? 
-				((sfd1.map { |sn| sn["ScheduleState"]== "Accepted" ? (sn["PlanEstimate"] ? sn["PlanEstimate"] : 0) : 0})).reduce(0,:+) : 0
+				((sfd1.map { |sn| 
+					#print sn["_UnformattedID"],"\t",sn["PlanEstimate"],"\n" if sn["ScheduleState"] == "Accepted"
+					sn["ScheduleState"]== "Accepted" ? (sn["PlanEstimate"] ? sn["PlanEstimate"] : 0) : 0
+
+					})).reduce(0,:+) : 0
 		end
 		
 		return accepted
@@ -536,7 +583,7 @@ class LookBackData
 
 			snapshots = (JSON.parse(query_snapshots_for_iterations([iteration]))) ["Results"]
 
-			print "iteration snapshots:#{snapshots.length}\n"
+			#print "iteration snapshots:#{snapshots.length}\n"
 
 			date_array = get_date_array( iteration.StartDate, iteration.EndDate )
 
@@ -574,6 +621,12 @@ class LookBackData
 						metrics[label] = metric_points_not_completed_percentage(iteration,date_array,snapshots)
 					when 'Daily In-Progress (Percentage)'
 						metrics[label] = metric_points_in_progress_percentage(iteration,date_array,snapshots)
+					when "Task Estimate First Day (Hours)"
+						metrics[label] = metric_day1_task_estimate_total(iteration,date_array,snapshots)
+					when "Task Estimate Last Day (Hours)"
+						metrics[label] = metric_day2_task_estimate_total(iteration,date_array,snapshots)
+					when "Task Actual Last Day (Hours)"
+						metrics[label] = metric_day2_task_actual_total(iteration,date_array,snapshots)
 				end
 			}
 			allMetrics[iteration["ObjectID"].to_s] = metrics
