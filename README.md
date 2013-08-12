@@ -12,6 +12,8 @@ You will need ruby 1.9.2 or greater installed. (http://www.ruby-lang.org/en/down
 
 [sudo] gem install axlsx
 
+[sudo] gem install tzinfo
+
 Running
 =======
 
