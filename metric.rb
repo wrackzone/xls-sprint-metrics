@@ -49,7 +49,7 @@ class Metric
         # group by object ID
         groups = sfd.group_by { |sn| sn["ObjectID"] }
         
-        if groups.size() == 0
+        if groups.keys.size() == 0
             return 0
         end
         
@@ -57,7 +57,7 @@ class Metric
             return groups.size()
         else
             value = 
-            (sfd.map { |group| group.last[@field] ? group.last[@field] : 0 }).reduce(0,:+)
+            (groups.keys.map { |group| groups[group].last[@field] ? groups[group].last[@field] : 0 }).reduce(0,:+)
             return value
         end
         
