@@ -111,10 +111,10 @@ class LookBackData
 
 	def get_date_array start_date, end_date
 		#pp end_date
-		d1 = Date.parse(start_date)
-		d2 = Date.parse(end_date) 
+		# d1 = Date.parse(start_date)
+		# d2 = Date.parse(end_date) 
 
-		dates = (d1 .. d2).to_a
+		dates = (start_date .. end_date).to_a
 
 		# knockout weekend days.
 		dates.delete_if { |d| d.strftime("%A") == "Sunday" || d.strftime("%A") == "Saturday" }
@@ -335,8 +335,13 @@ class LookBackData
 		r
 	end
 
+	def iteration_start_date(iteration)
+		return Date.parse(iteration.StartDate) + @iteration_start_day
+	end
+
 	def metric_day1_task_estimate_total(iteration,dates,snapshots)
-		d = Date.parse(iteration.StartDate) + 1
+		#d = Date.parse(iteration.StartDate) + 1
+		d = iteration_start_date(iteration)
 		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,d)}).compact!
 
 		day1_total = 0
@@ -475,7 +480,8 @@ class LookBackData
 	# count the number of items that dont have an estimate on day 1 of the iteration
 	def metric_day1_no_estimates(iteration,dates,snapshots)
 		#sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,dates.first)}).compact!
-		d = Date.parse(iteration.StartDate) + 1
+		#d = Date.parse(iteration.StartDate) + 1
+		d = iteration_start_date(iteration)
 		sfd1 = (snapshots.collect { |snapshot| snapshot if day_in_snapshot(snapshot,d)}).compact!
 
 		day1_no_estimate = 0
@@ -573,8 +579,9 @@ class LookBackData
 	end
 
 
-	def populate_metrics(project,iterations,labels)
+	def populate_metrics(project,iterations,labels, iteration_start_day)
 
+		@iteration_start_day = iteration_start_day
 		
 		allMetrics = {}
 
@@ -585,7 +592,8 @@ class LookBackData
 
 			#print "iteration snapshots:#{snapshots.length}\n"
 
-			date_array = get_date_array( iteration.StartDate, iteration.EndDate )
+			#date_array = get_date_array( iteration.StartDate, iteration.EndDate )
+			date_array = get_date_array( Date.parse(iteration.StartDate) + (@iteration_start_day-1), Date.parse(iteration.EndDate) )
 
 			metrics = {}
 
@@ -637,13 +645,14 @@ end
 
 class XLS
 
-	def	initialize(project_names,project_iterations,project_metrics,labels)
+	def	initialize(project_names,project_iterations,project_metrics,labels,iteration_start_day)
 
 		@projects = project_names
 		@iterations = project_iterations
 		@metrics = project_metrics
 		@metrics_labels = labels
 		@tz = TZInfo::Timezone.get('America/New_York')
+		@iteration_start_day = iteration_start_day ? iteration_start_day : 1
 
 	end
 
@@ -679,9 +688,12 @@ class XLS
 
   				dataSheet = sheet
 
-				sheet.add_row ["Run on " + (Time.new).strftime("%-m/%-d at %I:%M") ]
+				sheet.add_row ["Run on " + (Time.new).strftime("%-m/%-d at %I:%M") + " (Iteration Start Metrics based on day #{@iteration_start_day})" ]
 
   				@projects.each { |project| 
+
+  					# print "Iterations:", @iterations[project].length, "\n"
+  					next if @iterations[project].length == 0
 
 	  				row0 = [project,"","Sprints"]
 	  				@iterations[project].each { |e|
@@ -738,7 +750,8 @@ class XLS
 		      			#pp @iterations
 		      			@iterations[project].each { |it|
 		      				m = @metrics[project][it["ObjectID"].to_s][label]
-	      					itmetrics.push( m != 0 ? m : "" )
+	      					#itmetrics.push( m != 0 ? m : "" )
+	      					itmetrics.push( m  )
 		      			}
 		      			row_style = ((i>=0&&i<=3) || (i>=8&&i<=12)) ? bg_style : nil
 		      			itmetrics.unshift(label)
@@ -761,23 +774,23 @@ class XLS
     				start_row = (i*20) + ( i > 0 ? 1 : 0)
     				end_row = start_row + 20
 
-    				sheet.add_chart(Axlsx::Bar3DChart, :barDir => :col,
-    				#:start_at => [0,start_row], :end_at => [10, end_row], :title => "Iteration Metrics : " + project, :show_legend => true ) do |chart|
-					 :start_at => [0,start_row], :end_at => [10, end_row], :title => "Iteration Metrics : " + project ) do |chart|
-    					label_cells = dataSheet.rows[prow+1].cells[2..iters.length+1]
-    					# only graph the first 4
-    					@metrics_labels[0..3].each_with_index { |label,x| 
-	    					series_cells = dataSheet.rows[prow+2+x].cells[2..iters.length+2]
-	    					title_cells = dataSheet.rows[prow+2+x].cells[1]
-	      					chart.add_series :data => series_cells,  :title => title_cells, :labels => label_cells #, :title => title_cells #:labels => label_cells,  :title => title_cells
-	      					chart.catAxis.label_rotation = 45
-	      					chart.valAxis.label_rotation = -45
-	      					chart.valAxis.gridlines = false
-    						chart.catAxis.gridlines = false
-    						chart.catAxis.tick_lbl_pos = :none
-    						chart.valAxis.tick_lbl_pos = :none
-      					}
-    				end
+    		# 		sheet.add_chart(Axlsx::Bar3DChart, :barDir => :col,
+    		# 		#:start_at => [0,start_row], :end_at => [10, end_row], :title => "Iteration Metrics : " + project, :show_legend => true ) do |chart|
+					 # :start_at => [0,start_row], :end_at => [10, end_row], :title => "Iteration Metrics : " + project ) do |chart|
+    		# 			label_cells = dataSheet.rows[prow+1].cells[2..iters.length+1]
+    		# 			# only graph the first 4
+    		# 			@metrics_labels[0..3].each_with_index { |label,x| 
+	    	# 				series_cells = dataSheet.rows[prow+2+x].cells[2..iters.length+2]
+	    	# 				title_cells = dataSheet.rows[prow+2+x].cells[1]
+	     #  					chart.add_series :data => series_cells,  :title => title_cells, :labels => label_cells #, :title => title_cells #:labels => label_cells,  :title => title_cells
+	     #  					chart.catAxis.label_rotation = 45
+	     #  					chart.valAxis.label_rotation = -45
+	     #  					chart.valAxis.gridlines = false
+    		# 				chart.catAxis.gridlines = false
+    		# 				chart.catAxis.tick_lbl_pos = :none
+    		# 				chart.valAxis.tick_lbl_pos = :none
+      # 					}
+    		# 		end
     			}
 
     		end
@@ -832,6 +845,9 @@ password       = config["password"]
 workspace_name = config["workspace_name"]
 project_names   = config["project_name"]
 number_of_iterations = config["number_of_iterations"]
+iteration_start_day = config["iteration_start_day"] ? config["iteration_start_day"] : 1
+
+print "Iteration Start Day:#{iteration_start_day}\n"
 
 projects = project_names
 
@@ -865,7 +881,7 @@ project_names.each { |project_name|
 		end
 	end
 
-	metrics = lookbackdata.populate_metrics(project_name,iterations,metric_labels)
+	metrics = lookbackdata.populate_metrics(project_name,iterations,metric_labels,iteration_start_day)
 
 	project_metrics[project_name] = metrics
 	project_iterations[project_name] = iterations
@@ -873,7 +889,7 @@ project_names.each { |project_name|
 }
 
 #xls = XLS.new(iterations,metrics,metric_labels)
-xls = XLS.new(project_names,project_iterations,project_metrics,metric_labels)
+xls = XLS.new(project_names,project_iterations,project_metrics,metric_labels,iteration_start_day)
 
 xls.write_to_file workspace_name
 

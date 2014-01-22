@@ -22,7 +22,7 @@ class Metric
         @field = field
     end
     
-    def aggregation= aggregation   # :sum, :count etc.
+    def aggregation= aggregation   # :sum, :count, :max, :min, :mean etc.
         @aggregation = aggregation
     end
        
@@ -55,7 +55,8 @@ class Metric
         
         if @aggregation == :count
             return groups.size()
-        else
+        end
+        if @aggregation == :sum
             value = 
             (groups.keys.map { |group| groups[group].last[@field] ? groups[group].last[@field] : 0 }).reduce(0,:+)
             return value
@@ -70,3 +71,16 @@ class Day1TaskEstimate < Metric
         super("Task Estimate First Day (Hours)", "Total estimate of tasks for first day of iteration","TaskEstimateTotal",:sum,:first)
     end
 end
+
+class Day1TaskCount < Metric
+    def initialize
+        super("Tasks on First Day (Count)", "","TaskEstimateTotal",:count,:first)
+    end
+end
+
+class Day2TaskCount < Metric
+    def initialize
+        super("Tasks on Last Day (Count)", "Total estimate of tasks for first day of iteration","TaskEstimateTotal",:count,:last)
+    end
+end
+
