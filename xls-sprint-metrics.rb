@@ -295,8 +295,10 @@ class LookBackData
 		return cache( filename ) if cached( filename )
 
 		body = { 
-			"find" => {"Iteration" => iteration2["ObjectID"] , "_TypeHierarchy" => { "$in" => ["Defect","HierarchicalRequirement"]},
-				"_PreviousValues.Iteration" => iteration1["ObjectID"]
+			"find" => {"Iteration" => iteration2["ObjectID"] , 
+					   "_TypeHierarchy" => { "$in" => ["Defect","HierarchicalRequirement"]},
+					   "_PreviousValues.Iteration" => iteration1["ObjectID"],
+					   "_ValidFrom" => { "$gt" => iteration1["StartDate"]}
 			},
 			"fields" => ["ObjectID","FormattedID","Name","Iteration","Release","Project","ScheduleState","Severity","Priority","Tags","PlanEstimate","_ValidFrom","_ValidTo"],
 			"hydrate" => ["ScheduleState","Priority","Severity","Tags"],
