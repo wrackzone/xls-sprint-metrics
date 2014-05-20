@@ -46,32 +46,34 @@ end
 class LookBackData
 
 	# def initialize(workspace,project)
-	def	initialize(url,username,password,workspace_name,project_name,log_file,projects)
+	# def	initialize(url,username,password,workspace_name,project_name,log_file,projects)
+	def	initialize(config,projectName)
 
-		@log = Logger.new( log_file , 'daily' )
+		@log = Logger.new( config["log_file"] ? config["log_file"] : "log.txt" , 'daily' )
 
 		@headers = RallyAPI::CustomHttpHeader.new()
 		@headers.name = "LookBackData"
 		@headers.vendor = "Rally"
 		@headers.version = "1.0"
 
-		@config = {:base_url => url} # "https://rally1.rallydev.com/slm"}
-		@config[:username]   = username # "xxxbmullan@emc.com"
-		@config[:password]   = password
-		@config[:workspace]  = workspace_name
+		@config = {:base_url => config["url"]} # "https://rally1.rallydev.com/slm"}
+		@config[:username]   = config["username"] # "xxxbmullan@emc.com"
+		@config[:password]   = config["password"]
+		@config[:workspace]  = config["workspace_name"]
 		@config[:version]    = "1.40"
-		@config[:project]    = @project_name
+		@config[:project]    = projectName #@project_name
 		@config[:headers]    = @headers #from RallyAPI::CustomHttpHeader.new()
 
 		@rally = RallyAPI::RallyRestJson.new(@config)
 
-		@workspace = find_object(:workspace,workspace_name)
-		@log.debug(@workspace)
-		@project = find_object(:project,project_name)
-		@log.debug(@project)
-		@username = username
-		@password = password
-		@projects = projects
+		@workspace = find_object(:workspace,config["workspace_name"])
+		# @log.debug(@workspace)
+		# @project = find_object(:project,project_name)
+		@project = find_object(:project,projectName)
+		@log.debug(projectName)
+		# @log.debug(@project)
+		@username = config["username"]
+		@password = config["password"]
 
 	end
 
@@ -151,6 +153,29 @@ class LookBackData
 		results
 	end
 
+	def log_project(project)
+		parent = project["Parent"] ? project["Parent"]["Name"] : ""
+		children = project["Children"] && project["Children"].size() > 0 ? "Yes" : "No"
+		state = project["State"]
+		@log.debug("#{project["Name"]} : (parent)#{parent} : children:#{children} state:#{state}")
+
+	end
+
+	def read_all_projects(project, list)
+		project.read
+		children = project["Children"] ? project["Children"] : []
+		print project["Name"]," - ",project["Parent"],":",project["State"],"\n" if project["Parent"]
+		log_project(project)
+		# @log.debug("" + project["Name"] + " parent:" + (project["Parent"] ? project["Parent"]["Name"]:"") + " state:"+project["State"] + " children:" + (project["Children"]&&project["Children"].size() > 0 ? "Yes" : "No") )
+
+		children.each do | child | 
+			
+			read_all_projects(child,list)
+		end
+		list.push(project) if project["State"] == "Open"
+	end
+
+
 	# "unboxes" the Rally results object into a plain ruby array
 	def rally_results_to_array(results)
 		arr = []
@@ -181,7 +206,7 @@ class LookBackData
 	def find_object(type,name)
 		object_query = RallyAPI::RallyQuery.new()
 		object_query.type = type
-		object_query.fetch = "Name,ObjectID,FormattedID,Parent"
+		object_query.fetch = "Name,ObjectID,FormattedID,Parent,Children"
 		object_query.project_scope_up = false
 		object_query.project_scope_down = true
 		object_query.order = "Name Asc"
@@ -203,11 +228,12 @@ class LookBackData
 		request = Net::HTTP::Post.new(uri.request_uri,initheader = {'Content-Type' =>'application/json'})
 		@log.info(body.to_json)
 		request.body = body.to_json
-		@log.debug(request.body)
+		# @log.debug(request.body)
 		request.basic_auth @username, @password
 		response = http.request(request)
 		@log.debug(response.code)
-		#print "Response Code:'#{response.code}', #{response.code.to_i==200}\n"
+		# print "Response Code:'#{response.code}', #{response.code.to_i==200}\n"
+		# print "Body Size:#{response.body.size}\n"
 		if response.code.to_i == 200
 			response.body	
 		else
@@ -467,7 +493,10 @@ class LookBackData
 
 		return 0 if !iteration2
 
-		snapshots = (JSON.parse( query_snapshots_for_carried_over(iteration1,iteration2)))["Results"]
+		# print "1:#{iteration1.to_s} 2:#{iteration2.to_s} t:#{type}\n"
+		data = query_snapshots_for_carried_over(iteration1,iteration2)
+		# print "1:#{iteration1.to_s} 2:#{iteration2.to_s} t:#{type} d:#{data.size}\n"
+		snapshots = data.size > 0 ? (JSON.parse( data ) )["Results"] : []
 
 		# snapshots = snapshots.map { |snapshot| snapshot["ObjectID"] } .uniq
 
@@ -595,6 +624,11 @@ class LookBackData
 			#date_array = get_date_array( iteration.StartDate, iteration.EndDate )
 			date_array = get_date_array( Date.parse(iteration.StartDate) + (@iteration_start_day-1), Date.parse(iteration.EndDate) )
 
+			if date_array.size() == 0
+				allMetrics[iteration["ObjectID"].to_s] = {}
+				next
+			end
+
 			metrics = {}
 
 			# metric_labels = ["Committed (Count)","Final (Count)","Accepted (Count)",
@@ -645,11 +679,14 @@ end
 
 class XLS
 
-	def	initialize(project_names,project_iterations,project_metrics,labels,iteration_start_day)
+	# def	initialize(project_names,project_iterations,project_metrics,labels,iteration_start_day)
+	def	initialize(topLevelProjects, labels, iteration_start_day )
 
-		@projects = project_names
-		@iterations = project_iterations
-		@metrics = project_metrics
+		@topLevelProjects = topLevelProjects
+
+		# @projects = project_names
+		# @iterations = project_iterations
+		# @metrics = project_metrics
 		@metrics_labels = labels
 		@tz = TZInfo::Timezone.get('America/New_York')
 		@iteration_start_day = iteration_start_day ? iteration_start_day : 1
@@ -668,7 +705,6 @@ class XLS
 		d1.strftime("%-m/%d")
 	end
 
-
 	def write_to_file filename
 
 		dataSheet = nil
@@ -680,32 +716,40 @@ class XLS
 			p.use_autowidth = false
 			cell_rotated_text_style = p.workbook.styles.add_style(:alignment => {:textRotation => 180, :horizontal => :center})
 			centered_style = p.workbook.styles.add_style(:alignment => { :horizontal => :center } )
+			centered_bold  = p.workbook.styles.add_style(:alignment => { :horizontal => :center }, :font => {:b => TRUE,:sz => 20 } )
 			bg_style = p.workbook.styles.add_style(:bg_color => "FFC0C0C0",
                            :fg_color=>"#FF000000",
                            :border=>Axlsx::STYLE_THIN_BORDER)
 
-  			p.workbook.add_worksheet(:name => "#{filename}") do |sheet|
+			@topLevelProjects.each { |topLevelProject| 
+
+  				p.workbook.add_worksheet(:name => "#{topLevelProject[:name]}") do |sheet|
 
   				dataSheet = sheet
 
 				sheet.add_row ["Run on " + (Time.new).strftime("%-m/%-d at %I:%M") + " (Iteration Start Metrics based on day #{@iteration_start_day})" ]
 
-  				@projects.each { |project| 
+				# { :project_metrics => project_metrics, :project_iterations => project_iterations }
+  				topLevelProject[:projects].each { |subproject| 
+
+  					iterations = subproject[:iterations]
+  					metrics = subproject[:metrics]
 
   					# print "Iterations:", @iterations[project].length, "\n"
-  					next if @iterations[project].length == 0
+  					# next if tlp.project_iterations[project].length == 0
+  					next if iterations.length == 0
 
-	  				row0 = [project,"","Sprints"]
-	  				@iterations[project].each { |e|
+	  				row0 = [subproject[:name],"","Sprints"]
+	  				iterations.each { |e|
 	  					row0.push("")
 	  				}
-	  				row0styles = row0.map { |cell| centered_style }
+	  				row0styles = [centered_bold,centered_style,centered_style]
 
-	    			sheet.add_row row0, :style => row0styles
+	    			sheet.add_row row0, :style => [bg_style,centered_style,centered_style]
 
 	    			#ilabels = @iterations[project].map { |it| it["Name"] + " " + iteration_end_date(it) }
-	    			ilabels = @iterations[project].map { |it| it["Name"] }
-	    			istyles  = @iterations[project].map { cell_rotated_text_style }
+	    			ilabels = iterations.map { |it| it["Name"] }
+	    			istyles  = iterations.map { cell_rotated_text_style }
 
 	    			ilabels.unshift(nil)
 	    			ilabels.unshift("Data Metric")
@@ -715,10 +759,10 @@ class XLS
 	    			
 	    			sheet.add_row ilabels, :style => istyles
 
-		      		colIndex = (("A".."Z").to_a[@iterations[project].length+1])
+		      		colIndex = (("A".."Z").to_a[iterations.length+1])
 		      		cells1 = sheet.rows[sheet.rows.length-2].cells[0..1]
 
-		      		cells = sheet.rows[sheet.rows.length-2].cells[2..@iterations[project].length+1]
+		      		cells = sheet.rows[sheet.rows.length-2].cells[2..iterations.length+1]
 		      		sheet.merge_cells(cells)
 		      		sheet.merge_cells(cells1)
 		      		sheet.rows[sheet.rows.length-2].cells[1].style = centered_style
@@ -726,30 +770,31 @@ class XLS
 		      		sheet.rows[sheet.rows.length-1].cells[1].style = centered_style
 
 
-		      		iCenteredstyles  = @iterations[project].map { centered_style }
+		      		iCenteredstyles  = iterations.map { centered_style }
 		      		iCenteredstyles.unshift(nil)
 		      		iCenteredstyles.unshift(nil)
 
-	    			iStartDates = @iterations[project].map { |it| iteration_start_date(it) }
+	    			iStartDates = iterations.map { |it| iteration_start_date(it) }
 	    			iStartDates.unshift("Start")
 	    			iStartDates.unshift(nil)
 
 	    			sheet.add_row iStartDates, :style => iCenteredstyles
 
-	    			iEndDates = @iterations[project].map { |it| iteration_end_date(it) }
+	    			iEndDates = iterations.map { |it| iteration_end_date(it) }
 	    			iEndDates.unshift("End")
 	    			iEndDates.unshift(nil)
 	    			sheet.add_row iEndDates, :style => iCenteredstyles
 
 		      		# save the row
-		      		project_rows[project] = sheet.rows.length - 2
+		      		project_rows[subproject[:name]] = sheet.rows.length - 2
 
 		      		# write each metrics row
 		      		@metrics_labels.each_with_index { |label,i|
 		      			itmetrics = []
 		      			#pp @iterations
-		      			@iterations[project].each { |it|
-		      				m = @metrics[project][it["ObjectID"].to_s][label]
+		      			iterations.each { |it|
+		      				#m = @metrics[project][it["ObjectID"].to_s][label]
+		      				m = metrics[it["ObjectID"].to_s][label]
 	      					#itmetrics.push( m != 0 ? m : "" )
 	      					itmetrics.push( m  )
 		      			}
@@ -758,56 +803,34 @@ class XLS
 		      			itmetrics.unshift(nil)
 		      			sheet.add_row itmetrics, :style => itmetrics.map { |m| row_style }
 		      		}
-
 		      		sheet.add_row []
 		      	}
     		end
 
-    		# add the graph worksheet
-    		p.workbook.add_worksheet(:name => "Charts") do |sheet|
-
-    			@projects.each_with_index { |project,i|
-
-    				#pp "#{project} row:",project_rows[project]
-    				prow = project_rows[project]
-    				iters = @iterations[project]
-    				start_row = (i*20) + ( i > 0 ? 1 : 0)
-    				end_row = start_row + 20
-
-    		# 		sheet.add_chart(Axlsx::Bar3DChart, :barDir => :col,
-    		# 		#:start_at => [0,start_row], :end_at => [10, end_row], :title => "Iteration Metrics : " + project, :show_legend => true ) do |chart|
-					 # :start_at => [0,start_row], :end_at => [10, end_row], :title => "Iteration Metrics : " + project ) do |chart|
-    		# 			label_cells = dataSheet.rows[prow+1].cells[2..iters.length+1]
-    		# 			# only graph the first 4
-    		# 			@metrics_labels[0..3].each_with_index { |label,x| 
-	    	# 				series_cells = dataSheet.rows[prow+2+x].cells[2..iters.length+2]
-	    	# 				title_cells = dataSheet.rows[prow+2+x].cells[1]
-	     #  					chart.add_series :data => series_cells,  :title => title_cells, :labels => label_cells #, :title => title_cells #:labels => label_cells,  :title => title_cells
-	     #  					chart.catAxis.label_rotation = 45
-	     #  					chart.valAxis.label_rotation = -45
-	     #  					chart.valAxis.gridlines = false
-    		# 				chart.catAxis.gridlines = false
-    		# 				chart.catAxis.tick_lbl_pos = :none
-    		# 				chart.valAxis.tick_lbl_pos = :none
-      # 					}
-    		# 		end
-    			}
-
-    		end
-
-			# :labels => dataSheet["C2:J2"],
-#    		sheet.add_chart(Axlsx::LineChart, 
-#    				:start_at => [0,5], :end_at => [10, 20], :title => "Iteration Metrics", :show_legend => true ) do |chart|
-#      					chart.add_series :data => dataSheet["C3:J3"], :labels => dataSheet["C2:J2"],  :title => dataSheet["B3"]
-#      					chart.add_series :data => dataSheet["C4:J4"], :title => dataSheet["B4"]
-#      					chart.add_series :data => dataSheet["C5:J5"], :title => dataSheet["B5"]
-#    				end
-    		#end
+    		}
 
     		p.serialize("#{filename}.xlsx")
   		end
-  		
 	end
+end
+
+def getSubProjects(config, topProjectName)
+	subprojects = []
+	lookbackdata = LookBackData.new( config, topProjectName )
+	top_level_project = lookbackdata.find_object("Project",topProjectName)
+	lookbackdata.read_all_projects(top_level_project,subprojects)
+	subprojects
+end
+
+def validateProjects( config, project_names )
+
+	project_names.each { |project_name| 
+		lookbackdata = LookBackData.new( config, project_name )
+		project = lookbackdata.find_object("Project",project_name)
+		if project  == nil
+			abort( "'#{project_name}' not found!" )
+		end
+	}
 
 end
 
@@ -839,60 +862,71 @@ if not File.directory? "cache"
 	Dir::mkdir("cache")
 end
 
-url            = config["url"]
-username       = config["username"]
-password       = config["password"]
-workspace_name = config["workspace_name"]
-project_names   = config["project_name"]
+topProjectNames = config["project_name"]
 number_of_iterations = config["number_of_iterations"]
 iteration_start_day = config["iteration_start_day"] ? config["iteration_start_day"] : 1
-
 print "Iteration Start Day:#{iteration_start_day}\n"
-
-projects = project_names
-
-print username,"\t",project_names,"\n"
-
-project_metrics = {}
-project_iterations = {}
-
+print config["username"],"\t",config["project_name"],"\n"
 # validate projects
-project_names.each { |project_name| 
-	lookbackdata = LookBackData.new( url, username, password, workspace_name, project_name, "log.txt", projects )
-	if lookbackdata.find_object("Project",project_name) == nil
-		abort( "'#{project_name}' not found!" )
-	end
-}
+validateProjects(config, topProjectNames)
 
+topLevelProjects = []
 
-project_names.each { |project_name| 
+topProjectNames.each_with_index{ |topProjectName,index| 
 
-	# initialize
-	lookbackdata = LookBackData.new( url, username, password, workspace_name, project_name, "log.txt", projects )
+	topLevelProject = { :name => topProjectName, :projects => [] }
 
-	# finds the release(s) by name (if parent project there may be multiple releases for the name)
-	# releases = lookbackdata.get_releases_by_name release_name
-	iterations = lookbackdata.get_previous_iterations
+	# project_names.each { |project_name| 
+	subprojects = getSubProjects(config,topProjectName)
+	subprojects.each_with_index { |subp,index| 
 
-	# truncate to just the last set of iterations
-	if number_of_iterations != nil
-		while ( iterations.length > number_of_iterations)
-			iterations.shift
+		subproject = { :name => subp["Name"], :metrics => [], :iterations => []}
+		print "#{topProjectName}:(#{index}/#{subprojects.size()}) #{subproject[:name]}\n"
+
+		# initialize
+		lookbackdata = LookBackData.new( config, subproject[:name] )
+
+		# finds the release(s) by name (if parent project there may be multiple releases for the name)
+		# releases = lookbackdata.get_releases_by_name release_name
+		iterations = lookbackdata.get_previous_iterations
+
+		# truncate to just the last set of iterations
+		if number_of_iterations != nil
+			while ( iterations.length > number_of_iterations)
+				iterations.shift
+			end
 		end
-	end
 
-	metrics = lookbackdata.populate_metrics(project_name,iterations,metric_labels,iteration_start_day)
+		subproject[:metrics] = lookbackdata.populate_metrics(subproject[:name],iterations,metric_labels,iteration_start_day)
+		subproject[:iterations] = iterations
 
-	project_metrics[project_name] = metrics
-	project_iterations[project_name] = iterations
+		topLevelProject[:projects].push(subproject)
 
+	}
+	topLevelProjects.push(topLevelProject)
 }
+
+topLevelProjects.each { |tlp|
+	print "tlp:#{tlp[:name]}\n"
+	tlp[:projects].each { |p|
+		print "\tp:#{p[:name]}\n"
+		p[:iterations].each { |i,x|
+			print "\t\ti:#{i["Name"]} - #{p[:metrics][i["ObjectID"].to_s].size}\n"
+		}
+	}
+}
+
 
 #xls = XLS.new(iterations,metrics,metric_labels)
-xls = XLS.new(project_names,project_iterations,project_metrics,metric_labels,iteration_start_day)
+# xls = XLS.new(subprojects.map { |p| p["Name"] },project_iterations,project_metrics,metric_labels,iteration_start_day)
+# xls.write_to_file workspace_name
 
-xls.write_to_file workspace_name
+# [Top Level Project]
+# 	{ name, projects []} 
+# 		{ name, iterations[]
+# 			{name,id,metrics[]}}
 
-
+xls = XLS.new(topLevelProjects, metric_labels, iteration_start_day)
+xls.write_to_file config["workspace_name"]
 
 
