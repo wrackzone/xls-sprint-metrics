@@ -698,13 +698,13 @@ class XLS
 	def iteration_end_date(iteration) 
 		t1 = @tz.utc_to_local(Time.parse(iteration["EndDate"])) 
 		d1 = Date.new(t1.year,t1.mon,t1.day)
-		d1.strftime("%-m/%d")
+		d1.strftime("%-m/%d/%y")
 	end
 
 	def iteration_start_date(iteration) 
 		t1 = @tz.utc_to_local(Time.parse(iteration["StartDate"])) 
 		d1 = Date.new(t1.year,t1.mon,t1.day)
-		d1.strftime("%-m/%d")
+		d1.strftime("%-m/%d/%y")
 	end
 
 	def write_to_file filename
